@@ -1,0 +1,28 @@
+[project]
+name = "sentinel"
+version = "0.1.0"
+description = "Agentic QA for AI agents — adversarial reliability auditing on UiPath Test Cloud"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+    "anthropic>=0.40",
+    "httpx>=0.27",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+sentinel = "sentinel.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sentinel"]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
