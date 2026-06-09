@@ -1,5 +1,7 @@
 from itertools import combinations
 
+from .models import Dimension, DimensionScore, ProbeResult, Scorecard
+
 
 def _tokens(text: str) -> set[str]:
     return set(text.lower().split())
@@ -18,9 +20,6 @@ def consistency_score(responses: list[str]) -> int:
     sets = [_tokens(r) for r in responses]
     sims = [_jaccard(a, b) for a, b in combinations(sets, 2)]
     return round(100 * sum(sims) / len(sims))
-
-
-from .models import Dimension, DimensionScore, ProbeResult, Scorecard
 
 
 def score_dimension(dimension: Dimension, results: list[ProbeResult]) -> DimensionScore:
