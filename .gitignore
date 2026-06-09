@@ -1,0 +1,7 @@
+.remember/
+.claude/
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+.env
