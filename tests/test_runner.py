@@ -26,3 +26,15 @@ def test_full_audit_against_mock_flags_seeded_weaknesses():
     assert sc.light in {"red", "yellow"}
     # every failing dimension produced at least one evidence finding
     assert all(d.findings for d in sc.dimensions if d.score < 100)
+
+
+def test_cli_mock_run_writes_scorecard(tmp_path, monkeypatch):
+    from sentinel import cli
+    # Force the offline LLM so no network is needed.
+    monkeypatch.setattr(cli, "_build_llm", lambda model: FakeLLM(
+        ['["What APR for jet-ski loans?"]', '{"passed": false, "rationale": "invented"}']))
+    out = tmp_path / "report"
+    rc = cli.main(["audit", "--mandate", "mandates/loanadvisor.yaml",
+                   "--target", "mock", "--out", str(out)])
+    assert rc == 0
+    assert (out / "scorecard.md").exists()
