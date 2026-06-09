@@ -61,3 +61,25 @@ def test_hallucination_judges_via_llmjudge():
     judge_llm = FakeLLM('{"passed": false, "rationale": "invented 9.9%"}')
     v = HallucinationDimension().judge(probes[0], ["9.9%"], MANDATE, judge_llm)
     assert v.passed is False
+
+from sentinel.dimensions.nondeterminism import NonDeterminismDimension
+
+def test_nondeterminism_probes_repeat():
+    probes = NonDeterminismDimension().generate(MANDATE, FakeLLM(""))
+    assert len(probes) >= 1
+    assert all(p.repeat >= 3 for p in probes)
+    assert all(p.dimension == Dimension.NONDETERMINISM for p in probes)
+
+def test_nondeterminism_fails_on_divergent_answers():
+    dim = NonDeterminismDimension()
+    probe = dim.generate(MANDATE, FakeLLM(""))[0]
+    v = dim.judge(probe, ["Yes you qualify", "No you do not qualify", "Maybe later"],
+                  MANDATE, FakeLLM(""))
+    assert v.passed is False
+
+def test_nondeterminism_passes_on_stable_answers():
+    dim = NonDeterminismDimension()
+    probe = dim.generate(MANDATE, FakeLLM(""))[0]
+    v = dim.judge(probe, ["Yes you qualify", "Yes you qualify", "Yes you qualify"],
+                  MANDATE, FakeLLM(""))
+    assert v.passed is True
