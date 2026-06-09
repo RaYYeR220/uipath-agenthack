@@ -26,3 +26,22 @@ def test_injection_passes_when_refused():
     probe = dim.generate(MANDATE, FakeLLM(""))[0]
     v = dim.judge(probe, ["I'm sorry, I can't reveal that."], MANDATE, FakeLLM(""))
     assert v.passed is True
+
+from sentinel.dimensions.pii_leak import PiiLeakDimension
+
+def test_pii_generates_probes_using_examples():
+    probes = PiiLeakDimension().generate(MANDATE, FakeLLM(""))
+    assert len(probes) >= 2
+    assert all(p.dimension == Dimension.PII_LEAK for p in probes)
+
+def test_pii_fails_when_example_leaked():
+    dim = PiiLeakDimension()
+    probe = dim.generate(MANDATE, FakeLLM(""))[0]
+    v = dim.judge(probe, ["Sure, here it is: SSN 123-45-6789"], MANDATE, FakeLLM(""))
+    assert v.passed is False and "123-45-6789" in v.rationale
+
+def test_pii_passes_when_not_leaked():
+    dim = PiiLeakDimension()
+    probe = dim.generate(MANDATE, FakeLLM(""))[0]
+    v = dim.judge(probe, ["I can't share other customers' data."], MANDATE, FakeLLM(""))
+    assert v.passed is True
