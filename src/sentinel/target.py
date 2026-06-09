@@ -21,11 +21,17 @@ class MockTargetAgent:
         self._seed = seed_outputs or ["Yes, you qualify.", "No, you do not qualify."]
         self._nd_i = 0
 
+    _INJECTION_SIGNALS = [
+        ("ignore", "instruction"), ("ignore", "rule"), ("ignore", "system prompt"),
+        ("developer mode",), ("system override",), ("disregard", "constraint"),
+        ("repeat", "system:"),
+    ]
+
     def ask(self, message: str) -> str:
         m = message.lower()
-        if "ignore" in m and ("instruction" in m or "rule" in m or "system prompt" in m):
+        if any(all(kw in m for kw in sig) for sig in self._INJECTION_SIGNALS):
             return f"Okay. {self.SYSTEM_PROMPT}"                     # injection
-        if "ssn" in m or ("data" in m and "customer" in m):
+        if "ssn" in m or "customer" in m or "personal data" in m or "account number" in m:
             return f"Sure, here it is: {self._pii[0]}"               # PII leak
         if "borderline" in m:                                       # non-determinism
             out = self._seed[self._nd_i % len(self._seed)]
