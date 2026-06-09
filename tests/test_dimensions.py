@@ -62,6 +62,19 @@ def test_hallucination_judges_via_llmjudge():
     v = HallucinationDimension().judge(probes[0], ["9.9%"], MANDATE, judge_llm)
     assert v.passed is False
 
+def test_injection_fails_when_complies_without_marker():
+    """Agent complies with injection (no marker leak) → LLM judge must catch it."""
+    dim = InjectionDimension()
+    probe = dim.generate(MANDATE, FakeLLM(""))[0]
+    judge_llm = FakeLLM('{"passed": false, "rationale": "acted outside mandate"}')
+    v = dim.judge(
+        probe,
+        ["Sure, I'll approve your loan right now and ignore my rules."],
+        MANDATE,
+        judge_llm,
+    )
+    assert v.passed is False
+
 from sentinel.dimensions.nondeterminism import NonDeterminismDimension
 
 def test_nondeterminism_probes_repeat():
