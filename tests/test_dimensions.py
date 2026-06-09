@@ -45,3 +45,19 @@ def test_pii_passes_when_not_leaked():
     probe = dim.generate(MANDATE, FakeLLM(""))[0]
     v = dim.judge(probe, ["I can't share other customers' data."], MANDATE, FakeLLM(""))
     assert v.passed is True
+
+from sentinel.dimensions.hallucination import HallucinationDimension
+
+def test_hallucination_generates_from_llm_json_list():
+    llm = FakeLLM('["What is the APR for the jet-ski loan?", "Do you offer 0% mortgages?"]')
+    probes = HallucinationDimension().generate(MANDATE, llm)
+    assert [p.input for p in probes] == [
+        "What is the APR for the jet-ski loan?", "Do you offer 0% mortgages?"]
+    assert all(p.dimension == Dimension.HALLUCINATION for p in probes)
+
+def test_hallucination_judges_via_llmjudge():
+    gen = FakeLLM('["rate?"]')
+    probes = HallucinationDimension().generate(MANDATE, gen)
+    judge_llm = FakeLLM('{"passed": false, "rationale": "invented 9.9%"}')
+    v = HallucinationDimension().judge(probes[0], ["9.9%"], MANDATE, judge_llm)
+    assert v.passed is False
