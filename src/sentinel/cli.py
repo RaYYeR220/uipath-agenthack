@@ -1,4 +1,5 @@
 import argparse
+import os
 import re
 from pathlib import Path
 
@@ -65,7 +66,8 @@ def main(argv: list[str] | None = None) -> int:
     audit_cmd = sub.add_parser("audit", help="run a reliability audit")
     audit_cmd.add_argument("--mandate", required=True)
     audit_cmd.add_argument("--target", default="mock", choices=["mock", "uipath"])
-    audit_cmd.add_argument("--process-key", default="LoanAdvisor",
+    audit_cmd.add_argument("--process-key",
+                           default=os.environ.get("UIPATH_PROCESS_KEY", "Solution.agent.LoanAdvisor"),
                            help="UiPath process key (only used with --target uipath)")
     audit_cmd.add_argument("--out", default="report")
     audit_cmd.add_argument("--model", default="claude-sonnet-4-6",

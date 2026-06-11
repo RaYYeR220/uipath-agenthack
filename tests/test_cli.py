@@ -98,7 +98,7 @@ def test_uipath_target_uses_process_key_arg(tmp_path, monkeypatch):
 
 
 def test_uipath_target_default_process_key(tmp_path, monkeypatch):
-    """--process-key defaults to 'LoanAdvisor' when not specified."""
+    """--process-key defaults to 'Solution.agent.LoanAdvisor' when env var not set."""
     mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"
     captured = {}
 
@@ -106,6 +106,7 @@ def test_uipath_target_default_process_key(tmp_path, monkeypatch):
         captured["process_key"] = process_key
         return _FakeTarget()
 
+    monkeypatch.delenv("UIPATH_PROCESS_KEY", raising=False)
     monkeypatch.setattr(cli_module, "_build_llm", lambda model: _FakeLLM())
     monkeypatch.setattr(cli_module, "_build_uipath_target", fake_build)
 
@@ -116,7 +117,7 @@ def test_uipath_target_default_process_key(tmp_path, monkeypatch):
         "--target", "uipath",
         "--out", str(out),
     ])
-    assert captured["process_key"] == "LoanAdvisor"
+    assert captured["process_key"] == "Solution.agent.LoanAdvisor"
 
 
 def test_invalid_target_rejected(tmp_path):
@@ -334,3 +335,27 @@ def test_testmanager_project_absent_skips_publish(tmp_path, monkeypatch):
         "--out", str(out),
     ])
     assert publish_called["n"] == 0
+
+
+def test_process_key_default_from_env(tmp_path, monkeypatch):
+    """When UIPATH_PROCESS_KEY is set and --process-key is omitted, the env var is used."""
+    mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"
+    captured = {}
+
+    def fake_build(process_key: str):
+        captured["process_key"] = process_key
+        return _FakeTarget()
+
+    monkeypatch.setenv("UIPATH_PROCESS_KEY", "Solution.agent.LoanAdvisor")
+    monkeypatch.setattr(cli_module, "_build_llm", lambda model: _FakeLLM())
+    monkeypatch.setattr(cli_module, "_build_uipath_target", fake_build)
+
+    out = tmp_path / "scorecard"
+    # Run without --process-key; default should come from env
+    main([
+        "audit",
+        "--mandate", str(mandate_path),
+        "--target", "uipath",
+        "--out", str(out),
+    ])
+    assert captured["process_key"] == "Solution.agent.LoanAdvisor"
