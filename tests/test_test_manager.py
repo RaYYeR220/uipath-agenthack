@@ -333,7 +333,11 @@ def _full_publish_handler(project_id: str, n_probes: int, exec_status: int = 200
         if request.url.path.endswith("/connect/token"):
             return httpx.Response(200, json={"access_token": "tok"})
         path = request.url.path
-        if path.endswith(f"/{project_id}/testcases"):
+        url = str(request.url)
+        # GET testcases — no existing matches (all will be created fresh)
+        if f"/{project_id}/testcases" in url and request.method == "GET":
+            return httpx.Response(200, json={"data": []})
+        if path.endswith(f"/{project_id}/testcases") and request.method == "POST":
             tc_counter["n"] += 1
             return httpx.Response(201, json={
                 "id": f"tc-{tc_counter['n']}",
@@ -386,7 +390,10 @@ def test_publish_audit_creates_n_test_cases():
         if request.url.path.endswith("/connect/token"):
             return httpx.Response(200, json={"access_token": "tok"})
         path = request.url.path
-        if path.endswith(f"/{PROJECT_ID}/testcases"):
+        url = str(request.url)
+        if f"/{PROJECT_ID}/testcases" in url and request.method == "GET":
+            return httpx.Response(200, json={"data": []})
+        if path.endswith(f"/{PROJECT_ID}/testcases") and request.method == "POST":
             tc_calls["n"] += 1
             return httpx.Response(201, json={"id": f"tc-{tc_calls['n']}", "objKey": f"SEN:{tc_calls['n']}"})
         if path.endswith(f"/{PROJECT_ID}/testexecutions"):
@@ -454,3 +461,199 @@ def test_publish_audit_degradation_warning_is_ascii_clean():
     assert summary["warning"] is not None
     # Will raise UnicodeEncodeError if non-ASCII chars are present
     summary["warning"].encode("ascii")
+
+
+# ---------------------------------------------------------------------------
+# find_test_case_id
+# ---------------------------------------------------------------------------
+
+def test_find_test_case_id_returns_id_of_matching_name():
+    """Returns the id of the test case whose name matches exactly."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/connect/token"):
+            return httpx.Response(200, json={"access_token": "tok"})
+        if f"/{PROJECT_ID}/testcases" in str(request.url):
+            return httpx.Response(200, json={"data": [
+                {"id": "tc-10", "name": "[hallucination] probe-0"},
+                {"id": "tc-11", "name": "[hallucination] probe-1"},
+            ]})
+        raise AssertionError(f"unexpected {request.url}")
+
+    client = _make_client(handler)
+    result = client.find_test_case_id(PROJECT_ID, "[hallucination] probe-1")
+    assert result == "tc-11"
+
+
+def test_find_test_case_id_returns_none_when_not_found():
+    """Returns None when no test case with that name exists."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/connect/token"):
+            return httpx.Response(200, json={"access_token": "tok"})
+        if f"/{PROJECT_ID}/testcases" in str(request.url):
+            return httpx.Response(200, json={"data": []})
+        raise AssertionError(f"unexpected {request.url}")
+
+    client = _make_client(handler)
+    result = client.find_test_case_id(PROJECT_ID, "nonexistent")
+    assert result is None
+
+
+def test_find_test_case_id_tolerates_bare_list():
+    """Tolerates a bare JSON list (no 'data' wrapper) in the response."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/connect/token"):
+            return httpx.Response(200, json={"access_token": "tok"})
+        if f"/{PROJECT_ID}/testcases" in str(request.url):
+            # Bare list, no {"data": ...} wrapper
+            return httpx.Response(200, json=[
+                {"id": "tc-20", "name": "my-probe"},
+            ])
+        raise AssertionError(f"unexpected {request.url}")
+
+    client = _make_client(handler)
+    result = client.find_test_case_id(PROJECT_ID, "my-probe")
+    assert result == "tc-20"
+
+
+# ---------------------------------------------------------------------------
+# publish_audit — idempotent reuse (no duplicate test cases)
+# ---------------------------------------------------------------------------
+
+def test_publish_audit_reuses_existing_test_case_no_post():
+    """When find_test_case_id returns an id, no POST to /testcases is made for that probe."""
+    from sentinel.test_manager import publish_audit
+
+    results = _make_probe_results(1)
+    probe_name = f"[{results[0].dimension.value}] {results[0].probe_id}"
+    post_testcase_calls = {"n": 0}
+    get_testcases_calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/connect/token"):
+            return httpx.Response(200, json={"access_token": "tok"})
+        path = request.url.path
+        url = str(request.url)
+        # GET testcases — return a match
+        if f"/{PROJECT_ID}/testcases" in url and request.method == "GET":
+            get_testcases_calls["n"] += 1
+            return httpx.Response(200, json={"data": [
+                {"id": "existing-tc-id", "name": probe_name},
+            ]})
+        # POST testcases — must NOT be called
+        if f"/{PROJECT_ID}/testcases" in url and request.method == "POST":
+            post_testcase_calls["n"] += 1
+            return httpx.Response(201, json={"id": "new-tc-id", "objKey": "SEN:1"})
+        if path.endswith(f"/{PROJECT_ID}/testexecutions"):
+            return httpx.Response(200, json={"id": "exec-1"})
+        if path.endswith(f"/{PROJECT_ID}/testcaselogs") and "override" not in path:
+            return httpx.Response(200, json={"id": "log-1"})
+        if "override-result" in path or "finish" in path:
+            return httpx.Response(200, json={})
+        raise AssertionError(f"unexpected {request.method} {request.url}")
+
+    client = _make_client(handler)
+    summary = publish_audit(client, PROJECT_ID, "Run", results)
+
+    assert post_testcase_calls["n"] == 0, "must NOT POST testcases when one already exists"
+    assert summary["test_cases_reused"] == 1
+    assert summary["test_cases_created"] == 0
+
+
+def test_publish_audit_creates_when_no_existing_match():
+    """When find_test_case_id returns None, a new test case is POSTed."""
+    from sentinel.test_manager import publish_audit
+
+    results = _make_probe_results(1)
+    post_testcase_calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/connect/token"):
+            return httpx.Response(200, json={"access_token": "tok"})
+        path = request.url.path
+        url = str(request.url)
+        if f"/{PROJECT_ID}/testcases" in url and request.method == "GET":
+            return httpx.Response(200, json={"data": []})  # no match
+        if f"/{PROJECT_ID}/testcases" in url and request.method == "POST":
+            post_testcase_calls["n"] += 1
+            return httpx.Response(201, json={"id": "new-tc-id", "objKey": "SEN:1"})
+        if path.endswith(f"/{PROJECT_ID}/testexecutions"):
+            return httpx.Response(200, json={"id": "exec-1"})
+        if path.endswith(f"/{PROJECT_ID}/testcaselogs") and "override" not in path:
+            return httpx.Response(200, json={"id": "log-1"})
+        if "override-result" in path or "finish" in path:
+            return httpx.Response(200, json={})
+        raise AssertionError(f"unexpected {request.method} {request.url}")
+
+    client = _make_client(handler)
+    summary = publish_audit(client, PROJECT_ID, "Run", results)
+
+    assert post_testcase_calls["n"] == 1
+    assert summary["test_cases_created"] == 1
+    assert summary["test_cases_reused"] == 0
+
+
+def test_publish_audit_mixed_reuse_and_create():
+    """2 probes: one already exists (reused), one new (created)."""
+    from sentinel.test_manager import publish_audit
+
+    results = _make_probe_results(2)
+    probe_name_0 = f"[{results[0].dimension.value}] {results[0].probe_id}"
+    # probe_name_1 has no match
+    post_testcase_calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/connect/token"):
+            return httpx.Response(200, json={"access_token": "tok"})
+        path = request.url.path
+        url = str(request.url)
+        if f"/{PROJECT_ID}/testcases" in url and request.method == "GET":
+            # Only probe-0 has an existing test case
+            return httpx.Response(200, json={"data": [
+                {"id": "existing-tc-id", "name": probe_name_0},
+            ]})
+        if f"/{PROJECT_ID}/testcases" in url and request.method == "POST":
+            post_testcase_calls["n"] += 1
+            return httpx.Response(201, json={"id": f"new-tc-{post_testcase_calls['n']}", "objKey": "SEN:X"})
+        if path.endswith(f"/{PROJECT_ID}/testexecutions"):
+            return httpx.Response(200, json={"id": "exec-1"})
+        if path.endswith(f"/{PROJECT_ID}/testcaselogs") and "override" not in path:
+            return httpx.Response(200, json={"id": "log-1"})
+        if "override-result" in path or "finish" in path:
+            return httpx.Response(200, json={})
+        raise AssertionError(f"unexpected {request.method} {request.url}")
+
+    client = _make_client(handler)
+    summary = publish_audit(client, PROJECT_ID, "Run", results)
+
+    assert summary["test_cases_created"] == 1
+    assert summary["test_cases_reused"] == 1
+
+
+def test_publish_audit_summary_has_reused_key_in_happy_path():
+    """The returned summary always includes 'test_cases_reused' key."""
+    from sentinel.test_manager import publish_audit
+
+    results = _make_probe_results(2)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/connect/token"):
+            return httpx.Response(200, json={"access_token": "tok"})
+        path = request.url.path
+        url = str(request.url)
+        if f"/{PROJECT_ID}/testcases" in url and request.method == "GET":
+            return httpx.Response(200, json={"data": []})
+        if f"/{PROJECT_ID}/testcases" in url and request.method == "POST":
+            return httpx.Response(201, json={"id": "tc-1", "objKey": "SEN:1"})
+        if path.endswith(f"/{PROJECT_ID}/testexecutions"):
+            return httpx.Response(200, json={"id": "exec-1"})
+        if path.endswith(f"/{PROJECT_ID}/testcaselogs") and "override" not in path:
+            return httpx.Response(200, json={"id": "log-1"})
+        if "override-result" in path or "finish" in path:
+            return httpx.Response(200, json={})
+        raise AssertionError(f"unexpected {request.method} {request.url}")
+
+    client = _make_client(handler)
+    summary = publish_audit(client, PROJECT_ID, "Run", results)
+
+    assert "test_cases_reused" in summary
+    assert "test_cases_created" in summary

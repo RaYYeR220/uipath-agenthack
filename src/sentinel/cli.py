@@ -100,7 +100,8 @@ def main(argv: list[str] | None = None) -> int:
             project_id = resolved
 
         summary = publish_audit(tm_client, project_id, mandate.name, results)
-        print(f"Test Manager sync: {summary['test_cases_created']} test cases created, "
+        print(f"Test Manager sync: {summary['test_cases_created']} created, "
+              f"{summary.get('test_cases_reused', 0)} reused, "
               f"execution_id={summary['execution_id']}, "
               f"results_logged={summary['results_logged']}")
         if summary.get("warning"):

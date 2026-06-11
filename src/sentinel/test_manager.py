@@ -57,6 +57,23 @@ class TestManagerClient:
                 return project["id"]
         return None
 
+    def find_test_case_id(self, project_id: str, name: str) -> str | None:
+        """GET /api/v2/{projectId}/testcases; return id of first case matching name, or None.
+
+        Tolerates both {"data": [...]} and a bare list response.
+        """
+        resp = self._http.get(
+            f"{self._base}/api/v2/{project_id}/testcases",
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        items = body if isinstance(body, list) else body.get("data", [])
+        for tc in items:
+            if tc.get("name") == name:
+                return tc["id"]
+        return None
+
     def create_test_case(self, project_id: str, name: str, description: str,
                          version: str = "1.0") -> dict:
         """POST /api/v2/{projectId}/testcases; returns the created test case dict."""
@@ -147,12 +164,20 @@ def publish_audit(
         results_logged: bool
         warning: str | None
     """
-    # Step 1 — create a test case per ProbeResult
+    # Step 1 — upsert a test case per ProbeResult (reuse existing, create if missing)
     test_case_pairs: list[tuple[ProbeResult, str]] = []
+    created_count = 0
+    reused_count = 0
     for r in results:
         name = f"[{r.dimension.value}] {r.probe_id}"
-        tc = client.create_test_case(project_id, name, r.input)
-        test_case_pairs.append((r, tc["id"]))
+        existing_id = client.find_test_case_id(project_id, name)
+        if existing_id is not None:
+            test_case_pairs.append((r, existing_id))
+            reused_count += 1
+        else:
+            tc = client.create_test_case(project_id, name, r.input)
+            test_case_pairs.append((r, tc["id"]))
+            created_count += 1
 
     n = len(test_case_pairs)
     tc_ids = [tc_id for _, tc_id in test_case_pairs]
@@ -193,7 +218,8 @@ def publish_audit(
         warning = msg
 
     return {
-        "test_cases_created": n,
+        "test_cases_created": created_count,
+        "test_cases_reused": reused_count,
         "execution_id": execution_id,
         "results_logged": results_logged,
         "warning": warning,
