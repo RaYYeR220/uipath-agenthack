@@ -22,7 +22,7 @@ class UiPathConfig(BaseModel):
     client_id: str
     client_secret: str
     folder_path: str
-    scope: str = "OR.Default OR.Jobs OR.Execution OR.Folders"
+    scope: str = "OR.Jobs OR.Execution OR.Folders"
 
     @classmethod
     def from_env(cls) -> "UiPathConfig":
@@ -49,7 +49,7 @@ class UiPathConfig(BaseModel):
             client_id=os.environ["UIPATH_CLIENT_ID"],
             client_secret=os.environ["UIPATH_CLIENT_SECRET"],
             folder_path=os.environ["UIPATH_FOLDER_PATH"],
-            scope=os.environ.get("UIPATH_SCOPE", "OR.Default OR.Jobs OR.Execution OR.Folders"),
+            scope=os.environ.get("UIPATH_SCOPE", "OR.Jobs OR.Execution OR.Folders"),
         )
 
 
