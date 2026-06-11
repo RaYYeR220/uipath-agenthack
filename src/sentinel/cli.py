@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 from .dimensions import ALL_DIMENSIONS
+from .dotenv import load_dotenv
 from .llm import AnthropicLLM, LLMClient
 from .models import MandateSpec
 from .report import write_report
@@ -58,6 +59,7 @@ def _build_target(kind: str, mandate: MandateSpec, process_key: str = "LoanAdvis
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv()
     parser = argparse.ArgumentParser(prog="sentinel")
     sub = parser.add_subparsers(dest="command", required=True)
     audit_cmd = sub.add_parser("audit", help="run a reliability audit")
