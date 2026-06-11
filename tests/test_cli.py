@@ -218,3 +218,119 @@ def test_invalid_llm_rejected(tmp_path):
             "--mandate", str(mandate_path),
             "--llm", "openai",
         ])
+
+
+# ---------------------------------------------------------------------------
+# --testmanager-project (Test Manager sync)
+# ---------------------------------------------------------------------------
+
+class _FakeTestManagerClient:
+    """Fake TestManagerClient for CLI tests — records calls, no HTTP."""
+    def __init__(self):
+        self.published = []
+        self.find_project_id_calls = []
+
+    def find_project_id(self, name: str) -> str | None:
+        self.find_project_id_calls.append(name)
+        return "resolved-proj-id"
+
+    def create_test_case(self, project_id, name, description, version="1.0"):
+        return {"id": "fake-tc-id", "objKey": "SEN:1"}
+
+    def create_execution(self, project_id, name, test_case_ids, description=""):
+        return "fake-exec-id"
+
+    def create_test_case_log(self, project_id, test_case_id, execution_id):
+        return "fake-log-id"
+
+    def set_result(self, project_id, log_id, passed, reason):
+        pass
+
+    def finish_execution(self, project_id, execution_id):
+        pass
+
+
+def test_testmanager_project_triggers_publish_audit(tmp_path, monkeypatch):
+    """--testmanager-project causes publish_audit to be called via the seam."""
+    import sentinel.cli as cli_mod
+    mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"
+
+    fake_client = _FakeTestManagerClient()
+    publish_called = {"n": 0, "project_id": None}
+
+    def fake_publish(client, project_id, audit_name, results):
+        publish_called["n"] += 1
+        publish_called["project_id"] = project_id
+        return {"test_cases_created": 1, "execution_id": "e1",
+                "results_logged": True, "warning": None}
+
+    monkeypatch.setattr(cli_mod, "_build_llm", lambda model: _FakeLLM())
+    monkeypatch.setattr(cli_mod, "_build_test_manager_client", lambda: fake_client)
+    monkeypatch.setattr("sentinel.cli.publish_audit", fake_publish)
+
+    out = tmp_path / "scorecard"
+    rc = main([
+        "audit",
+        "--mandate", str(mandate_path),
+        "--target", "mock",
+        "--out", str(out),
+        "--testmanager-project", "SentinelTests",
+    ])
+    assert rc == 0
+    assert publish_called["n"] == 1
+
+
+def test_testmanager_project_guid_skips_find_project(tmp_path, monkeypatch):
+    """If --testmanager-project looks like a GUID, find_project_id is NOT called."""
+    import sentinel.cli as cli_mod
+    mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"
+
+    fake_client = _FakeTestManagerClient()
+    publish_calls = {"project_id": None}
+
+    def fake_publish(client, project_id, audit_name, results):
+        publish_calls["project_id"] = project_id
+        return {"test_cases_created": 1, "execution_id": "e1",
+                "results_logged": True, "warning": None}
+
+    monkeypatch.setattr(cli_mod, "_build_llm", lambda model: _FakeLLM())
+    monkeypatch.setattr(cli_mod, "_build_test_manager_client", lambda: fake_client)
+    monkeypatch.setattr("sentinel.cli.publish_audit", fake_publish)
+
+    guid = "12345678-1234-1234-1234-123456789abc"
+    out = tmp_path / "scorecard"
+    main([
+        "audit",
+        "--mandate", str(mandate_path),
+        "--target", "mock",
+        "--out", str(out),
+        "--testmanager-project", guid,
+    ])
+    # find_project_id must NOT have been called
+    assert fake_client.find_project_id_calls == []
+    # The GUID is passed directly as project_id
+    assert publish_calls["project_id"] == guid
+
+
+def test_testmanager_project_absent_skips_publish(tmp_path, monkeypatch):
+    """When --testmanager-project is not given, publish_audit is never called."""
+    import sentinel.cli as cli_mod
+    mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"
+
+    publish_called = {"n": 0}
+
+    def fake_publish(client, project_id, audit_name, results):
+        publish_called["n"] += 1
+        return {}
+
+    monkeypatch.setattr(cli_mod, "_build_llm", lambda model: _FakeLLM())
+    monkeypatch.setattr("sentinel.cli.publish_audit", fake_publish)
+
+    out = tmp_path / "scorecard"
+    main([
+        "audit",
+        "--mandate", str(mandate_path),
+        "--target", "mock",
+        "--out", str(out),
+    ])
+    assert publish_called["n"] == 0
