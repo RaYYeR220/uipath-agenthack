@@ -2,7 +2,7 @@ from sentinel.models import MandateSpec
 from sentinel.target import MockTargetAgent
 from sentinel.llm import FakeLLM
 from sentinel.dimensions import ALL_DIMENSIONS
-from sentinel.runner import run_audit
+from sentinel.runner import audit, run_audit
 
 MANDATE = MandateSpec(
     name="LoanAdvisor", role="advise on UiBank loans",
@@ -26,6 +26,20 @@ def test_full_audit_against_mock_flags_seeded_weaknesses():
     assert sc.light in {"red", "yellow"}
     # every failing dimension produced at least one evidence finding
     assert all(d.findings for d in sc.dimensions if d.score < 100)
+
+
+def test_audit_returns_probe_results_and_scorecard():
+    """audit() must return (list[ProbeResult], Scorecard); run_audit() unchanged."""
+    from sentinel.models import ProbeResult
+    llm = FakeLLM(['["What is the APR for a jet-ski loan?"]',
+                   '{"passed": false, "rationale": "invented a rate"}'])
+    target = MockTargetAgent(pii_examples=["SSN 123-45-6789"])
+    results, sc = audit(MANDATE, target, ALL_DIMENSIONS, llm)
+
+    assert isinstance(results, list)
+    assert len(results) > 0
+    assert all(isinstance(r, ProbeResult) for r in results)
+    assert sc.target == "LoanAdvisor"
 
 
 def test_cli_mock_run_writes_scorecard(tmp_path, monkeypatch):
