@@ -219,6 +219,12 @@ class UiPathLLM:
         temperature: float = 0,
     ):
         self._config = config
+        # The LLM Gateway is served under /agenthub_, not /orchestrator_
+        # (verified live on staging: /orchestrator_/llm/... returns 405).
+        self._llm_base = (
+            os.environ.get("UIPATH_LLM_BASE_URL", "").rstrip("/")
+            or config.base_url.rstrip("/").replace("/orchestrator_", "/agenthub_")
+        )
         self._model = model or os.environ.get(
             "UIPATH_LLM_MODEL", "gpt-4.1-mini-2025-04-14"
         )
@@ -240,9 +246,7 @@ class UiPathLLM:
 
     def complete(self, system: str, user: str) -> str:
         token = self._get_token()
-        url = (
-            f"{self._config.base_url.rstrip('/')}/llm/api/chat/completions"
-        )
+        url = f"{self._llm_base}/llm/api/chat/completions"
         resp = self._http.post(
             url,
             params={"api-version": "2024-08-01-preview"},

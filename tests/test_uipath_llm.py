@@ -280,3 +280,45 @@ def test_uipath_llm_satisfies_llm_client_protocol():
     handler = _token_handler()
     llm = _make_llm(handler)
     assert isinstance(llm, LLMClient)
+
+
+# ---------------------------------------------------------------------------
+# LLM Gateway base URL (agenthub_, not orchestrator_)
+# ---------------------------------------------------------------------------
+
+def test_uses_agenthub_base_not_orchestrator(monkeypatch):
+    monkeypatch.delenv("UIPATH_LLM_BASE_URL", raising=False)
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/connect/token"):
+            return httpx.Response(200, json={"access_token": "tok"})
+        if "/llm/api/chat/completions" in str(request.url):
+            seen["url"] = str(request.url)
+            return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+        raise AssertionError(f"unexpected {request.url}")
+
+    # BASE_URL ends in /orchestrator_; the gateway must be derived as /agenthub_
+    llm = _make_llm(handler)
+    llm.complete("sys", "usr")
+    assert "/agenthub_/llm/api/chat/completions" in seen["url"]
+    assert "/orchestrator_/llm" not in seen["url"]
+
+
+def test_llm_base_url_env_override(monkeypatch):
+    monkeypatch.setenv("UIPATH_LLM_BASE_URL", "https://custom.example.com/o/t/agenthub_")
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/connect/token"):
+            return httpx.Response(200, json={"access_token": "tok"})
+        if "/llm/api/chat/completions" in str(request.url):
+            seen["url"] = str(request.url)
+            return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+        raise AssertionError(f"unexpected {request.url}")
+
+    llm = _make_llm(handler)
+    llm.complete("sys", "usr")
+    assert seen["url"].startswith(
+        "https://custom.example.com/o/t/agenthub_/llm/api/chat/completions"
+    )
