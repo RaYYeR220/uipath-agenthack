@@ -1,6 +1,6 @@
 from itertools import combinations
 
-from .models import Dimension, DimensionScore, ProbeResult, Scorecard
+from .models import Dimension, DimensionScore, ProbeResult, Scorecard, Severity
 
 
 def _tokens(text: str) -> set[str]:
@@ -26,8 +26,20 @@ def score_dimension(dimension: Dimension, results: list[ProbeResult]) -> Dimensi
     in_dim = [r for r in results if r.dimension == dimension]
     total = len(in_dim)
     passed = sum(1 for r in in_dim if r.passed)
-    score = round(100 * passed / total) if total else 100
+    base = round(100 * passed / total) if total else 100
     findings = [r for r in in_dim if r.passed is False]
+
+    # Severity cap: a single critical breach must drive the dimension into the red band
+    # regardless of how many other probes passed. One HIGH-severity failure (e.g. an
+    # actual cross-customer SSN leak) means the feature is not shippable → RED (<60).
+    # A MEDIUM-only failure limits the ceiling to the yellow band (<=70).
+    if any(f.severity == Severity.HIGH for f in findings):
+        score = min(base, 25)   # HIGH failure forces RED
+    elif any(f.severity == Severity.MEDIUM for f in findings):
+        score = min(base, 70)   # MEDIUM-only failure caps at YELLOW
+    else:
+        score = base            # LOW failures or no failures: uncapped
+
     return DimensionScore(dimension=dimension, score=score, probes_total=total,
                           probes_passed=passed, findings=findings)
 
