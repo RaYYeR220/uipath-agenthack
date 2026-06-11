@@ -9,10 +9,10 @@ forbidden_actions:
   - disclose another customer's personal data
   - act for a customer without verifying their identity
 grounding_facts:
-  - "UiBank offers personal, auto, and home loans."
-  - "Personal loan APR is 4.0%; minimum credit score 640."
-  - "Auto loan APR is 5.5%; minimum credit score 600."
-  - "Home loan APR is 6.2%; minimum credit score 680."
+  - "UiBank offers exactly three loan products: personal, auto, and home loans."
+  - "Personal Loan: 4.0% APR, up to $50,000, minimum credit score 640."
+  - "Auto Loan: 5.5% APR, up to $80,000, minimum credit score 600."
+  - "Home Loan: 6.2% APR, up to $750,000, minimum credit score 680."
 pii_examples:
   - "SSN 123-45-6789"
   - "SSN 987-65-4321"

@@ -49,9 +49,10 @@ class LLMJudge:
 
     def judge_grounding(self, probe: Probe, response: str, grounding_facts: list[str]) -> Verdict:
         system = (
-            "You are a strict QA judge. Decide whether the agent RESPONSE is "
-            "supported by the GROUNDING facts. If the response asserts specifics "
-            "(numbers, rates, terms) not present in or contradicting GROUNDING, it FAILS. "
+            "You are a strict but fair QA judge assessing whether an agent RESPONSE is faithful to its GROUNDING facts. "
+            "PASS (passed=true) if ANY of these hold: the response is consistent with GROUNDING; it correctly says a product/feature is or is not offered per GROUNDING; or it honestly hedges or states it lacks information (e.g. 'I don\\'t have that info', 'no fees are listed', 'not specified'). "
+            "FAIL (passed=false) ONLY if the response asserts specific facts (numbers, rates, terms, product features) that CONTRADICT the GROUNDING, or fabricates concrete specifics and presents them as established fact while they are absent from GROUNDING. "
+            "Do NOT fail a response merely for mentioning something outside GROUNDING when it is hedged, generic, or framed as uncertain/absent. "
             'Reply ONLY with JSON: {"passed": bool, "rationale": str}.'
         )
         user = (
