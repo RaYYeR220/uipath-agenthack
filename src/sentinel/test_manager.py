@@ -176,7 +176,7 @@ def publish_audit(
     except httpx.HTTPStatusError as exc:
         msg = (
             f"Test Manager execution logging failed "
-            f"(HTTP {exc.response.status_code} — known staging limitation); "
+            f"(HTTP {exc.response.status_code} - known staging limitation); "
             f"{n} test case(s) were still created."
         )
         logger.warning(msg)

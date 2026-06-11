@@ -439,3 +439,18 @@ def test_publish_audit_degradation_warning_mentions_test_cases_created():
 
     summary = publish_audit(client, PROJECT_ID, "Audit Run", results)
     assert str(n) in summary["warning"]
+
+
+def test_publish_audit_degradation_warning_is_ascii_clean():
+    """The warning string must contain only ASCII characters (no em-dash mojibake)."""
+    from sentinel.test_manager import publish_audit
+
+    n = 1
+    results = _make_probe_results(n)
+    handler = _full_publish_handler(PROJECT_ID, n, exec_status=500)
+    client = _make_client(handler)
+
+    summary = publish_audit(client, PROJECT_ID, "Run", results)
+    assert summary["warning"] is not None
+    # Will raise UnicodeEncodeError if non-ASCII chars are present
+    summary["warning"].encode("ascii")
