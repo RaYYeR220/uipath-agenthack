@@ -12,7 +12,15 @@ from .target import MockTargetAgent, TargetAgent
 
 
 def _build_llm(model: str) -> LLMClient:
+    """Build the Anthropic-backed LLM client."""
     return AnthropicLLM(model=model)
+
+
+def _build_uipath_llm() -> LLMClient:
+    """Seam for tests: build a real UiPathLLM from environment config."""
+    from .uipath_agent import UiPathConfig, UiPathLLM
+
+    return UiPathLLM(UiPathConfig.from_env())
 
 
 def _build_uipath_target(process_key: str) -> TargetAgent:
@@ -42,11 +50,19 @@ def main(argv: list[str] | None = None) -> int:
     audit.add_argument("--process-key", default="LoanAdvisor",
                        help="UiPath process key (only used with --target uipath)")
     audit.add_argument("--out", default="report")
-    audit.add_argument("--model", default="claude-sonnet-4-6")
+    audit.add_argument("--model", default="claude-sonnet-4-6",
+                       help="Model name for --llm anthropic")
+    audit.add_argument("--llm", default="anthropic", choices=["anthropic", "uipath"],
+                       help="LLM backend for judges (default: anthropic)")
     args = parser.parse_args(argv)
 
     mandate = MandateSpec(**yaml.safe_load(Path(args.mandate).read_text(encoding="utf-8")))
-    llm = _build_llm(args.model)
+
+    if args.llm == "uipath":
+        llm = _build_uipath_llm()
+    else:
+        llm = _build_llm(args.model)
+
     target = _build_target(args.target, mandate, args.process_key)
     scorecard = run_audit(mandate, target, ALL_DIMENSIONS, llm)
     paths = write_report(scorecard, Path(args.out))

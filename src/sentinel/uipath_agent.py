@@ -1,8 +1,11 @@
-"""UiPath Orchestrator Jobs-API client and TargetAgent adapter.
+"""UiPath Orchestrator Jobs-API client, TargetAgent adapter, and LLM Gateway client.
 
 Invokes a deployed UiPath autonomous agent as an Orchestrator job and returns
 its text output.  Mirrors the OrchestratorClient style (injectable httpx.Client,
 cached OAuth token, no real network in tests).
+
+UiPathLLM routes Sentinel's judge/generation calls through the UiPath LLM Gateway
+(AI Trust Layer) using the normalized-API endpoint.
 """
 import json
 import os
@@ -182,3 +185,84 @@ class UiPathTargetAgent:
             {self._input_key: message}, self._process_key
         )
         return str(out.get(self._output_key, ""))
+
+
+def _fetch_token(http: httpx.Client, identity_url: str, client_id: str,
+                 client_secret: str, scope: str) -> str:
+    """Fetch an OAuth2 client-credentials token; raises on HTTP error."""
+    resp = http.post(
+        f"{identity_url.rstrip('/')}/connect/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "scope": scope,
+        },
+    )
+    resp.raise_for_status()
+    return resp.json()["access_token"]
+
+
+class UiPathLLM:
+    """LLMClient that routes calls through the UiPath LLM Gateway (AI Trust Layer).
+
+    Uses the normalized-API endpoint; drops in anywhere an LLMClient is accepted
+    (judges, dimension generators) with no code changes needed upstream.
+    """
+
+    def __init__(
+        self,
+        config: UiPathConfig,
+        model: str | None = None,
+        http: httpx.Client | None = None,
+        max_tokens: int = 1024,
+        temperature: float = 0,
+    ):
+        self._config = config
+        self._model = model or os.environ.get(
+            "UIPATH_LLM_MODEL", "gpt-4.1-mini-2025-04-14"
+        )
+        self._http = http or httpx.Client(timeout=60)
+        self._max_tokens = max_tokens
+        self._temperature = temperature
+        self._token: str | None = None
+
+    def _get_token(self) -> str:
+        if self._token is None:
+            self._token = _fetch_token(
+                self._http,
+                self._config.identity_url,
+                self._config.client_id,
+                self._config.client_secret,
+                self._config.scope,
+            )
+        return self._token
+
+    def complete(self, system: str, user: str) -> str:
+        token = self._get_token()
+        url = (
+            f"{self._config.base_url.rstrip('/')}/llm/api/chat/completions"
+        )
+        resp = self._http.post(
+            url,
+            params={"api-version": "2024-08-01-preview"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "X-UIPATH-STREAMING-ENABLED": "false",
+                "X-UiPath-LlmGateway-RequestingProduct": "sentinel",
+                "X-UiPath-LlmGateway-RequestingFeature": "judge",
+                "X-UiPath-LlmGateway-NormalizedApi-ModelName": self._model,
+                "X-UiPath-LLMGateway-AllowFull4xxResponse": "true",
+            },
+            content=json.dumps({
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "max_tokens": self._max_tokens,
+                "temperature": self._temperature,
+            }),
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]

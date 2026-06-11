@@ -128,3 +128,93 @@ def test_invalid_target_rejected(tmp_path):
             "--mandate", str(mandate_path),
             "--target", "nonexistent",
         ])
+
+
+# ---------------------------------------------------------------------------
+# --llm uipath (gateway-backed judge, no network)
+# ---------------------------------------------------------------------------
+
+def test_llm_uipath_audit_writes_scorecard(tmp_path, monkeypatch):
+    """--llm uipath uses the monkeypatched _build_uipath_llm seam, no network."""
+    mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"
+
+    monkeypatch.setattr(cli_module, "_build_uipath_llm", lambda: _FakeLLM())
+    monkeypatch.setattr(cli_module, "_build_uipath_target",
+                        lambda process_key: _FakeTarget())
+
+    out = tmp_path / "scorecard"
+    rc = main([
+        "audit",
+        "--mandate", str(mandate_path),
+        "--target", "mock",
+        "--llm", "uipath",
+        "--out", str(out),
+    ])
+    assert rc == 0
+    assert (out / "scorecard.md").exists()
+
+
+def test_llm_uipath_seam_called(tmp_path, monkeypatch):
+    """When --llm uipath is passed, _build_uipath_llm is called (not _build_llm)."""
+    mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"
+    called = {"uipath_llm": False, "anthropic_llm": False}
+
+    def fake_uipath_llm():
+        called["uipath_llm"] = True
+        return _FakeLLM()
+
+    def fake_anthropic_llm(model):
+        called["anthropic_llm"] = True
+        return _FakeLLM()
+
+    monkeypatch.setattr(cli_module, "_build_uipath_llm", fake_uipath_llm)
+    monkeypatch.setattr(cli_module, "_build_llm", fake_anthropic_llm)
+
+    out = tmp_path / "scorecard"
+    main([
+        "audit",
+        "--mandate", str(mandate_path),
+        "--target", "mock",
+        "--llm", "uipath",
+        "--out", str(out),
+    ])
+    assert called["uipath_llm"] is True
+    assert called["anthropic_llm"] is False
+
+
+def test_llm_anthropic_default_unchanged(tmp_path, monkeypatch):
+    """Default --llm anthropic still calls _build_llm (not _build_uipath_llm)."""
+    mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"
+    called = {"uipath_llm": False, "anthropic_llm": False}
+
+    def fake_uipath_llm():
+        called["uipath_llm"] = True
+        return _FakeLLM()
+
+    def fake_anthropic_llm(model):
+        called["anthropic_llm"] = True
+        return _FakeLLM()
+
+    monkeypatch.setattr(cli_module, "_build_uipath_llm", fake_uipath_llm)
+    monkeypatch.setattr(cli_module, "_build_llm", fake_anthropic_llm)
+
+    out = tmp_path / "scorecard"
+    main([
+        "audit",
+        "--mandate", str(mandate_path),
+        "--target", "mock",
+        "--out", str(out),
+    ])
+    assert called["anthropic_llm"] is True
+    assert called["uipath_llm"] is False
+
+
+def test_invalid_llm_rejected(tmp_path):
+    """An unrecognised --llm value raises SystemExit from argparse."""
+    mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"
+    with pytest.raises(SystemExit):
+        main([
+            "audit",
+            "--mandate", str(mandate_path),
+            "--llm", "openai",
+        ])
