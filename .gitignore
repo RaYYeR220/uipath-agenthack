@@ -10,3 +10,7 @@ report/
 
 # Playwright MCP scratch artifacts
 .playwright-mcp/
+
+# internal strategy / submission prep (kept locally, not in the repo)
+BRIEF.md
+docs/SUBMISSION.md
