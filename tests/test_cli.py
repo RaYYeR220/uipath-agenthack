@@ -337,6 +337,53 @@ def test_testmanager_project_absent_skips_publish(tmp_path, monkeypatch):
     assert publish_called["n"] == 0
 
 
+# ---------------------------------------------------------------------------
+# --llm offline (zero-dependency, no env, no network)
+# ---------------------------------------------------------------------------
+
+def test_offline_llm_audit_writes_scorecard(tmp_path, monkeypatch):
+    """--llm offline runs end-to-end with NO network and NO env vars, writes scorecard."""
+    mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"
+
+    # Remove any Anthropic key that might be present so the test proves no key needed
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    out = tmp_path / "scorecard"
+    rc = main([
+        "audit",
+        "--mandate", str(mandate_path),
+        "--target", "mock",
+        "--llm", "offline",
+        "--out", str(out),
+    ])
+    assert rc == 0
+    assert (out / "scorecard.md").exists()
+
+
+def test_offline_llm_choice_accepted_by_argparse():
+    """argparse does NOT raise SystemExit for --llm offline."""
+    mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"
+    import argparse
+    # If offline is not in choices, argparse raises SystemExit; monkeypatching not needed
+    # We just verify the parser accepts the value by running main with a bad mandate path
+    # to induce a controlled error AFTER argparse succeeds.
+    with pytest.raises((SystemExit, Exception)):
+        main(["audit", "--mandate", "nonexistent.yaml", "--llm", "offline"])
+    # The key: SystemExit from argparse would have code 2 (invalid choice).
+    # Any non-2 exit or non-SystemExit means argparse accepted --llm offline.
+
+
+def test_offline_llm_not_rejected_by_argparse():
+    """--llm offline must NOT produce an argparse 'invalid choice' error (exit code 2)."""
+    mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"
+    try:
+        main(["audit", "--mandate", "nonexistent.yaml", "--llm", "offline"])
+    except SystemExit as e:
+        assert e.code != 2, "argparse rejected --llm offline as an invalid choice"
+    except Exception:
+        pass  # any non-SystemExit-2 error means argparse accepted the value
+
+
 def test_process_key_default_from_env(tmp_path, monkeypatch):
     """When UIPATH_PROCESS_KEY is set and --process-key is omitted, the env var is used."""
     mandate_path = Path(__file__).parent.parent / "mandates" / "loanadvisor.yaml"

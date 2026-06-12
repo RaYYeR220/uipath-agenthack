@@ -133,7 +133,7 @@ Sentinel was designed and implemented end-to-end with **Claude Code (Anthropic)*
 
 - Design spec: `docs/superpowers/specs/2026-06-09-sentinel-agentic-qa-design.md`
 - Implementation plans: `docs/superpowers/plans/`
-- 140+ tests written before implementation (all mocked, no network)
+- 150+ tests written before implementation (all mocked, no network)
 - `Co-Authored-By: Claude` trailers on every commit
 
 ---
@@ -193,18 +193,17 @@ Key variables in `.env`:
 uv run pytest -q
 ```
 
-140+ tests, fully mocked. Covers every module including UiPath client adapters, Test Manager sync, scoring, and the CLI.
+150+ tests, fully mocked. Covers every module including UiPath client adapters, Test Manager sync, scoring, and the CLI.
 
 ### Offline demo — no UiPath org needed
 
 ```bash
-uv run sentinel audit \
-  --mandate mandates/loanadvisor.yaml \
-  --target mock \
-  --out report
+uv run sentinel audit --mandate mandates/loanadvisor.yaml --target mock --llm offline --out report
 ```
 
-Audits the built-in deliberately-flawed `MockTargetAgent`, which mirrors LoanAdvisor's seeded weaknesses. Writes `report/scorecard.md` and `report/scorecard.json`. Requires `ANTHROPIC_API_KEY` for the LLM judge.
+No API key, no network, no UiPath org required. Audits the built-in deliberately-flawed `MockTargetAgent`, which mirrors LoanAdvisor's seeded weaknesses. Writes `report/scorecard.md` and `report/scorecard.json`.
+
+Deterministic dimensions (PII leak, prompt injection, non-determinism) still produce real verdicts. The hallucination dimension runs with canned LLM responses — it exercises the full pipeline without semantic judging. Use `--llm anthropic` (needs `ANTHROPIC_API_KEY`) for real semantic LLM judging.
 
 ### Live run — governed LLM + Test Cloud sync
 
@@ -251,7 +250,7 @@ src/sentinel/
 ## Known Limitations
 
 - **Test Manager execution result-logging:** the external-execution result-logging API (`POST /testcaselogs/{id}/override-result`) returns HTTP 500 on the current AgentHack staging environment. Sentinel degrades gracefully — test cases are still created in Test Manager and the execution record is opened, but per-case pass/fail status is not logged. The `report/scorecard.md` is the primary results artifact. Native robot-run results via a Studio test case + Run Job are a planned future enhancement.
-- **LLM judge backend:** the offline demo uses Anthropic directly (`ANTHROPIC_API_KEY`). The governed path (`--llm uipath`) requires the AI Trust Layer LLM Gateway to be enabled and a model configured in the org's catalog.
+- **LLM judge backend:** `--llm offline` (default for the demo) requires no key or network. `--llm anthropic` uses Anthropic directly (`ANTHROPIC_API_KEY`) for real semantic judging. The governed path (`--llm uipath`) requires the AI Trust Layer LLM Gateway to be enabled and a model configured in the org's catalog.
 - **Probe scope:** MVP covers four dimensions (hallucination, injection, PII leak, non-determinism). Out-of-mandate and tool-misuse/refusal-calibration dimensions are planned stretch goals.
 
 ---

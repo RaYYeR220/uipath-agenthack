@@ -7,7 +7,7 @@ import yaml
 
 from .dimensions import ALL_DIMENSIONS
 from .dotenv import load_dotenv
-from .llm import AnthropicLLM, LLMClient
+from .llm import AnthropicLLM, LLMClient, OfflineLLM
 from .models import MandateSpec
 from .report import write_report
 from .runner import audit
@@ -72,8 +72,8 @@ def main(argv: list[str] | None = None) -> int:
     audit_cmd.add_argument("--out", default="report")
     audit_cmd.add_argument("--model", default="claude-sonnet-4-6",
                            help="Model name for --llm anthropic")
-    audit_cmd.add_argument("--llm", default="anthropic", choices=["anthropic", "uipath"],
-                           help="LLM backend for judges (default: anthropic)")
+    audit_cmd.add_argument("--llm", default="anthropic", choices=["anthropic", "uipath", "offline"],
+                           help="LLM backend for judges (default: anthropic; offline requires no key/network)")
     audit_cmd.add_argument("--testmanager-project", default=None,
                            help="Test Manager project name or GUID; when set, syncs audit to Test Cloud")
     args = parser.parse_args(argv)
@@ -82,6 +82,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.llm == "uipath":
         llm = _build_uipath_llm()
+    elif args.llm == "offline":
+        llm = OfflineLLM()
     else:
         llm = _build_llm(args.model)
 
