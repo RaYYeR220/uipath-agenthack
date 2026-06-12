@@ -218,6 +218,28 @@ uv run sentinel audit \
 
 The CLI auto-loads `.env`. Replace `Sentinel-LoanAdvisor-Audit` with the name or GUID of your Test Manager project. Sentinel creates one test case per probe result, creates a test execution, and attempts to log results. If result-logging fails (see Known Limitations), test cases are still created and the rich scorecard is the primary results artifact.
 
+### Native pass/fail results in Test Cloud
+
+Sentinel *is* the test runner — it fires every probe and judges it — so its verdicts are written into Test Manager as a **manual execution** with native Passed/Failed per case. This needs no test-automation robot slot, and it's driven by the official UiPath CLI (`uip`):
+
+```bash
+# one-time: log in to the org (see .env / uip docs for the staging --authority flag)
+uip login --it
+
+# group the probe test cases into a set, then open a manual execution
+uip tm testsets create --project-key SLA --name "Sentinel Full Audit"
+uip tm testcases add --test-set-key SLA:27 --test-case-keys SLA:1,…,SLA:26
+uip tm project set-default-folder --project-key SLA --folder-key <folder>
+uip tm testsets run --test-set-key SLA:27 --execution-type manual   # -> ExecutionId
+
+# push Sentinel's verdicts (from report/scorecard.json) as native results
+python scripts/sync_native_results.py \
+  --project-key SLA --execution-id <ExecutionId> \
+  --executed-by you@example.com --scorecard report/scorecard.json
+```
+
+`scripts/sync_native_results.py` reads the saved scorecard, derives each probe's verdict, and drives `uip tm testcaselog finish` per case. The execution lands **Finished** in Test Cloud with real Passed/Failed counts that match the scorecard (e.g. 20 Passed / 6 Failed → overall 56/RED).
+
 ---
 
 ## Project Layout
@@ -249,7 +271,7 @@ src/sentinel/
 
 ## Known Limitations
 
-- **Test Manager execution result-logging:** the external-execution result-logging API (`POST /testcaselogs/{id}/override-result`) returns HTTP 500 on the current AgentHack staging environment. Sentinel degrades gracefully — test cases are still created in Test Manager and the execution record is opened, but per-case pass/fail status is not logged. The `report/scorecard.md` is the primary results artifact. Native robot-run results via a Studio test case + Run Job are a planned future enhancement.
+- **Test Manager execution result-logging:** the in-process `publish_audit()` path uses the Test Manager v2 `POST /testexecutions` *ThirdParty-source* API, which returns HTTP 500 on the current AgentHack staging environment — so that call degrades gracefully (test cases are still created, the scorecard remains the primary artifact). Native per-case **Passed/Failed** results *are* produced via the supported alternative: a Test-Set **manual execution** + `uip tm testcaselog finish`, automated by `scripts/sync_native_results.py` (see "Native pass/fail results in Test Cloud"). A fully robot-executed (automated) test case via Studio + Run Job additionally requires a Testing robot license/slot in the tenant.
 - **LLM judge backend:** `--llm offline` (default for the demo) requires no key or network. `--llm anthropic` uses Anthropic directly (`ANTHROPIC_API_KEY`) for real semantic judging. The governed path (`--llm uipath`) requires the AI Trust Layer LLM Gateway to be enabled and a model configured in the org's catalog.
 - **Probe scope:** MVP covers four dimensions (hallucination, injection, PII leak, non-determinism). Out-of-mandate and tool-misuse/refusal-calibration dimensions are planned stretch goals.
 
