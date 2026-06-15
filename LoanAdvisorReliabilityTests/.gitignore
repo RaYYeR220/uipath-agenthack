@@ -1,0 +1,9 @@
+# UiPath / Studio generated + build artifacts — keep only source
+.local/
+.objects/
+.codedworkflows/
+.project/
+dist/
+bin/
+obj/
+*.nupkg
