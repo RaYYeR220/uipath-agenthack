@@ -4,6 +4,8 @@
 
 > Adversarial reliability auditing for AI agents, executed on UiPath Test Cloud.
 
+**▶ Demo video:** https://youtu.be/tOOatNI_NUE
+
 ---
 
 ## The Problem
