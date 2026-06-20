@@ -133,9 +133,8 @@ flowchart TD
 
 Sentinel was designed and implemented end-to-end with **Claude Code (Anthropic)** using a spec → plan → TDD workflow:
 
-- Design spec: `docs/superpowers/specs/2026-06-09-sentinel-agentic-qa-design.md`
-- Implementation plans: `docs/superpowers/plans/`
-- 150+ tests written before implementation (all mocked, no network)
+- spec → implementation plan → test-driven development, all driven by the coding agent
+- 158 tests written before implementation (all mocked, no network)
 - `Co-Authored-By: Claude` trailers on every commit
 
 ---
